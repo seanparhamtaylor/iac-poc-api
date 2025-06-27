@@ -40,3 +40,5 @@ terraform.rc
 node_modules/
 dist/
 .DS_Store
+.env
+event-log/

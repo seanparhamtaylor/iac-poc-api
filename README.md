@@ -56,3 +56,12 @@ Now any events from your GitHub repository will be forwarded to your local appli
 - `npm run start:prod` - Start the application in production mode
 - `npm run test` - Run tests
 - `npm run lint` - Run linting
+
+## Docker Image
+
+Build docker image:
+```shell
+docker build -t iac-poc-api .
+```
+
+

@@ -1,10 +1,18 @@
 import { Module } from '@nestjs/common';
-import { WebhookController } from './webhook/webhook.controller';
+import { ConfigModule } from '@nestjs/config';
 import { SmeeModule } from './smee/smee.module';
+import { WebhookModule } from './webhook/webhook.module';
+import { StoreModule } from './store/store.module';
 
 @Module({
-  imports: [SmeeModule],
-  controllers: [WebhookController],
-  providers: [],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+    StoreModule,
+    SmeeModule,
+    WebhookModule,
+  ],
 })
 export class AppModule {} 
