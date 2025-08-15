@@ -27,6 +27,7 @@
     "@octokit/auth-app": "^8.0.1",
     "@octokit/rest": "^22.0.0",
     "@temporalio/client": "^1.11.8",
+    "dedent": "^1.6.0",
     "nanoid": "^5.1.5",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",

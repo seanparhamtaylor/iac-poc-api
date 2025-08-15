@@ -21,9 +21,9 @@ export class WebhookController {
     console.log('Signature:', signature);
     console.log('Payload:', JSON.stringify(payload, null, 2));
 
-    // const now = new Date().toDateString() + '_' + new Date().toTimeString().replace(/ /g, '_').split(':')[0] + ':' + new Date().toTimeString().replace(/ /g, '_').split(':')[1];
-    // fs.mkdirSync(`event-log/${now}/${payload.repository.full_name}/${event}`, { recursive: true });
-    // fs.writeFileSync(`event-log/${now}/${payload.repository.full_name}/${event}/payload-${deliveryId}.json`, JSON.stringify(payload, null, 2));
+    const now = new Date().toDateString() + '_' + new Date().toTimeString().replace(/ /g, '_').split(':')[0] + ':' + new Date().toTimeString().replace(/ /g, '_').split(':')[1];
+    fs.mkdirSync(`event-log/${now}/${payload.repository.full_name}/${event}`, { recursive: true });
+    fs.writeFileSync(`event-log/${now}/${payload.repository.full_name}/${event}/payload-${deliveryId}.json`, JSON.stringify(payload, null, 2));
 
     // Verify webhook signature
     const rawBody = JSON.stringify(payload);
@@ -41,9 +41,23 @@ export class WebhookController {
       return this.webhookService.handleWorkflowJobEvent(payload);
     }
 
+    const expressCommandPattern: RegExp = /^express ([\w-]+)$/;
     if (event === 'issue_comment' && payload.action === 'created') {
-      if (payload.comment.body.toLowerCase() === 'terraform apply') {
-        return this.webhookService.handleApplyEvent(payload);
+      const match = expressCommandPattern.exec(payload.comment.body.toLowerCase());
+      if (!match) {
+        return { received: true };
+      }
+
+      const command = match?.[1];
+      switch (command) {
+        case 'apply':
+          return this.webhookService.handleApplyEvent(payload);
+        case 'post-build-simulation':
+          return this.webhookService.handlePostBuildSimulationEvent(payload);
+        case 'help':
+          return this.webhookService.handleHelpEvent(payload);
+        default:
+          return this.webhookService.handleInvalidExpressCommand(payload);
       }
     }
 

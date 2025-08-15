@@ -1,14 +1,22 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'crypto';
-import { Octokit } from '@octokit/rest';
 import { createAppAuth } from '@octokit/auth-app';
+import { Octokit } from '@octokit/rest';
+import { createHmac } from 'crypto';
+import dedent from "dedent";
 import { StoreService } from '../store/store.service';
 import { TemporalClient } from './temporal-client.service';
 
 @Injectable()
 export class WebhookService {
     private readonly octokit: Octokit;
+
+    private readonly expressCommandUsage = dedent`
+    usage:
+        \`express apply\` - Runs a Terraform apply, if the PR has been approved
+        \`express post-build-simulation\` - Runs a Temporal "post-build" simulation workflow
+        \`express help\` - Shows this help message
+        `;
 
     constructor(private readonly configService: ConfigService,
         private readonly checkRunStore: StoreService,
@@ -70,19 +78,45 @@ export class WebhookService {
             return;
         }
 
+        // Get installation ID for the repository
+        const installation = await this.octokit.apps.getRepoInstallation({
+            owner: repository.owner.login,
+            repo: repository.name,
+        });
+
         // Create an authenticated client for this installation
         const installationOctokit = new Octokit({
             auth: (await this.octokit.auth({
                 type: 'installation',
-                installationId: process.env.GITHUB_APP_INSTALLATION_ID,
+                installationId: installation.data.id,
             }) as { token: string }).token,
         });
 
-        // Get installation ID for the repository
-        // const installation = await this.octokit.apps.getRepoInstallation({
-        //   owner: repository.owner.login,
-        //   repo: repository.name,
-        // });
+        if (action === 'opened') {
+            const welcomeText = dedent`
+                👋 **Hello! Your Pull Request is being processed.**
+
+                We've detected Terraform code in this PR. Our system is now reviewing and processing your changes.
+
+                ---
+
+                💡 **Did you know?**  
+                You can interact with our automation by commenting on this PR with the special keyword:
+                \`express <command>\`
+
+                For example, to get help and see available commands, just comment:
+                \`express help\`
+
+                We'll reply with detailed usage information and available options.
+            `;
+
+            await installationOctokit.issues.createComment({
+                owner: repository.owner.login,
+                repo: repository.name,
+                issue_number: pull_request.number,
+                body: welcomeText
+            });
+        }
 
         const preFlightCheckRun = await installationOctokit.checks.create({
             owner: repository.owner.login,
@@ -94,14 +128,6 @@ export class WebhookService {
                 title: 'Pre-Flight Check',
                 summary: 'Preparing strategy',
             },
-        });
-
-        // add a comment to the pull request
-        await installationOctokit.issues.createComment({
-            owner: repository.owner.login,
-            repo: repository.name,
-            issue_number: pull_request.number,
-            body: 'Request received. Let\'s do this!',
         });
 
         const args = {
@@ -181,6 +207,69 @@ export class WebhookService {
         console.log('Temporal TF Apply workflow args:', JSON.stringify(args, null, 2));
 
         await this.temporalClient.runApplyWorkflow(args);
+    }
+
+    async handleHelpEvent(payload: any) {
+        const { issue, repository } = payload;
+
+        // Get installation ID for the repository
+        const installation = await this.octokit.apps.getRepoInstallation({
+            owner: repository.owner.login,
+            repo: repository.name,
+        });
+
+        // Create an authenticated client for this installation
+        const installationOctokit = new Octokit({
+            auth: (await this.octokit.auth({
+                type: 'installation',
+                installationId: installation.data.id,
+            }) as { token: string }).token,
+        });
+
+        await installationOctokit.issues.createComment({
+            owner: repository.owner.login,
+            repo: repository.name,
+            issue_number: issue.number,
+            body: `The \`express\` keyword can be used to trigger actions on this pull request. Simply add a comment to this pull request with the \`express\` keyword and then a valid command.\n\n${this.expressCommandUsage}`
+        });
+    }
+
+    async handleInvalidExpressCommand(payload: any) {
+        const { issue, repository } = payload;
+
+        // Get installation ID for the repository
+        const installation = await this.octokit.apps.getRepoInstallation({
+            owner: repository.owner.login,
+            repo: repository.name,
+        });
+
+        // Create an authenticated client for this installation
+        const installationOctokit = new Octokit({
+            auth: (await this.octokit.auth({
+                type: 'installation',
+                installationId: installation.data.id,
+            }) as { token: string }).token,
+        });
+
+        await installationOctokit.issues.createComment({
+            owner: repository.owner.login,
+            repo: repository.name,
+            issue_number: issue.number,
+            body: `\`${payload.comment.body}\` is not a valid command.\n\n${this.expressCommandUsage}`
+        });
+    }
+
+    async handlePostBuildSimulationEvent(payload: any) {
+        const { issue, repository } = payload;
+
+        const args = {
+            repository: repository.name,
+            owner: repository.owner.login,
+            pullRequestNumber: issue.number.toString(),
+            terraformPath: './',
+        };
+
+        await this.temporalClient.runPostBuildSimulationWorkflow(args);
     }
 
     async handleWorkflowJobEvent(payload: any) {
